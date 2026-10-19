@@ -147,7 +147,6 @@ async def bot_status():
         "users": users,
         "active_alerts": active_alerts,
         "snapshots": snapshots,
-        "sources": ["LiraScope", "LiraNews"],
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 

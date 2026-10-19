@@ -284,9 +284,7 @@ def gold_kb():
 # ----------------------------- text builders -----------------------------
 WELCOME = (
     "🇸🇾 <b>بوت أسعار صرف الليرة السورية</b>\n\n"
-    "أهلاً بك! أتابع أسعار الصرف والذهب مباشرةً من مصدرين موثوقين:\n"
-    "• <b>LiraScope</b> (المصرف المركزي + السوق)\n"
-    "• <b>أخبار الليرة</b> (السوق + الذهب)\n\n"
+    "أهلاً بك! متابعة لحظية ومباشرة لأسعار الصرف في السوق والمصرف المركزي وأسعار الذهب.\n\n"
     "اختر من القائمة بالأسفل 👇"
 )
 
@@ -345,10 +343,9 @@ async def get_trend_indicator(code, current_price, entry_or_item):
 def rate_detail_text(entry):
     lines = [f"{entry['flag']} <b>{entry['name_ar']} ({entry['code']})</b> مقابل الليرة السورية\n"]
     cbs = _src_line("🏦 المصرف المركزي", entry.get("lirascope_cbs"))
-    lsm = _src_line("💹 السوق (LiraScope)", entry.get("lirascope_market"))
-    lnn = _src_line("📰 السوق (أخبار الليرة)", entry.get("liranews"))
+    mkt = _src_line("💹 السوق الموازي", entry.get("liranews") or entry.get("lirascope_market"))
     any_data = False
-    for ln in (cbs, lsm, lnn):
+    for ln in (cbs, mkt):
         if ln:
             lines.append(ln)
             any_data = True
@@ -498,7 +495,7 @@ async def gold_text(data):
                           f"(شراء {fmt(v.get('buy'))} / مبيع {fmt(v.get('sell'))})")
         else:
             lines.append(f"• {g['name_ar']}: —")
-    lines.append("\n<i>المصدر: أخبار الليرة</i>")
+    lines.append("\n<i>يتم التحديث لحظياً بشكل تلقائي.</i>")
     return "\n".join(lines)
 
 

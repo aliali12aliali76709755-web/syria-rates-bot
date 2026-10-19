@@ -117,7 +117,6 @@ async def get_rates(force=False):
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "currencies": currencies,
         "gold": gold,
-        "sources": ["LiraScope", "LiraNews"],
     }
     _CACHE["data"] = data
     _CACHE["ts"] = now
