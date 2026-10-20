@@ -157,7 +157,14 @@ def market_buy_sell(entry):
 
 
 async def is_user_admin(chat_id):
-    return chat_id == 6641619062
+    if chat_id == 6641619062:
+        return True
+    try:
+        settings = await get_settings()
+        admins = settings.get("authorized_admins", [])
+        return chat_id in admins
+    except Exception:
+        return False
 
 
 async def check_mandatory_sub(user_id, bot):
@@ -587,7 +594,8 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await is_user_admin(user_id):
         await send_admin_panel(update, context)
     else:
-        await update.message.reply_text("⚠️ هذا الأمر متاح للمشرفين فقط.")
+        # Non-admins get no response so it appears the command does not exist
+        return
 
 
 # ----------------------------- shared senders -----------------------------
@@ -863,7 +871,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Admin actions
     if head == "admin":
         if not await is_user_admin(user_id):
-            await q.answer("❌ غير مسموح لك بالدخول.", show_alert=True)
+            await q.answer()
             return
             
         action = dataparts[1]

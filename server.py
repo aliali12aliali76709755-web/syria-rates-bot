@@ -39,13 +39,9 @@ async def scheduled_snapshot_and_change_check():
 
 async def keep_awake_pinger():
     """Periodically ping the public URL to keep Render instance awake 24/7"""
-    ping_url = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("PUBLIC_URL")
-    if not ping_url:
-        logger.info("No RENDER_EXTERNAL_URL or PUBLIC_URL configured, skipping keep_awake_pinger.")
-        return
-    
-    ping_url = ping_url.rstrip("/") + "/healthz"
-    await asyncio.sleep(60) # Wait 1 min after startup
+    raw_url = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("PUBLIC_URL") or "https://syria-rates-bot.onrender.com"
+    ping_url = raw_url.rstrip("/") + "/healthz"
+    await asyncio.sleep(45) # Wait 45s after startup
     logger.info("Starting Keep-Alive pinger to %s", ping_url)
     while True:
         try:
@@ -55,7 +51,7 @@ async def keep_awake_pinger():
                         logger.info("Keep-Alive ping successful: 200 OK")
         except Exception as e:
             logger.debug("Keep-Alive ping notice: %s", e)
-        await asyncio.sleep(300) # Ping every 5 minutes
+        await asyncio.sleep(180) # Ping every 3 minutes
 
 
 @asynccontextmanager
