@@ -168,6 +168,10 @@ async def is_user_admin(chat_id):
 
 
 async def check_mandatory_sub(user_id, bot):
+    # Admins are exempt from mandatory subscription
+    if await is_user_admin(user_id):
+        return True, []
+
     settings = await get_settings()
     chans = settings.get("mandatory_channels", [])
     if not chans:
@@ -177,11 +181,27 @@ async def check_mandatory_sub(user_id, bot):
     for chan in chans:
         try:
             member = await bot.get_chat_member(chat_id=chan, user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
+            status = getattr(member, "status", None)
+            status_str = status.value if hasattr(status, "value") else str(status)
+            
+            # Check valid active membership
+            if status_str in ["creator", "administrator", "member"]:
+                continue
+            elif status_str == "restricted" and getattr(member, "is_member", True):
+                continue
+            else:
+                # User left or was banned/kicked
                 not_joined.append(chan)
         except Exception as e:
-            logger.warning(f"Failed to check membership for user {user_id} in {chan}: {e}")
-            # If checking fails (bot not admin or channel private/invalid), we do not block the user.
+            err_text = str(e).lower()
+            logger.warning(f"Membership check for user {user_id} in {chan}: {e}")
+            # If the user is not found, left, or not a participant in the channel/group:
+            # THIS MEANS THEY ARE NOT SUBSCRIBED!
+            if "bot is not a member" in err_text or "chat not found" in err_text:
+                logger.error(f"Bot configuration error: Bot is not an admin in {chan}")
+            else:
+                not_joined.append(chan)
+                
     return len(not_joined) == 0, not_joined
 
 
@@ -189,7 +209,11 @@ def mandatory_sub_kb(not_joined):
     buttons = []
     for chan in not_joined:
         clean_name = chan.replace("@", "")
-        buttons.append([InlineKeyboardButton(f"📢 اشترك في {chan}", url=f"https://t.me/{clean_name}")])
+        if clean_name.startswith("https://t.me/"):
+            url = clean_name
+        else:
+            url = f"https://t.me/{clean_name}"
+        buttons.append([InlineKeyboardButton(f"📢 اشترك في {chan}", url=url)])
     buttons.append([InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="m:verify_sub")])
     return InlineKeyboardMarkup(buttons)
 
@@ -199,31 +223,48 @@ async def enforce_subscription(update: Update, context: ContextTypes.DEFAULT_TYP
     if not user:
         return True
     
-    # Exclude admin verify callback, password inputs and "صويري" keyword from sub check
+    # Exclude admins completely
+    if await is_user_admin(user.id):
+        return True
+
+    # Exclude verify callback itself so they can verify
     is_verify_callback = update.callback_query and update.callback_query.data == "m:verify_sub"
+    if is_verify_callback:
+        return True
+
     text = update.message.text.strip() if (update.message and update.message.text) else ""
     state = context.user_data.get("await")
     is_admin_flow = text == "صويري" or (state and state.get("type") == "admin_pw")
-    
-    # Exclude admin actions and admin panel queries from subscription enforcement
-    is_admin_action = (update.callback_query and update.callback_query.data.startswith("admin:")) or (update.message and text.startswith("/admin"))
-    
-    if is_verify_callback or is_admin_flow:
-        return True
-        
-    if is_admin_action and await is_user_admin(user.id):
+    if is_admin_flow:
         return True
         
     ok, not_joined = await check_mandatory_sub(user.id, context.bot)
     if not ok:
         msg_text = (
-            "⚠️ <b>عذراً، يجب عليك الاشتراك في قنواتنا أولاً لتفعيل البوت:</b>\n\n"
-            "الرجاء الاشتراك بالقنوات أدناه ثم اضغط على زر التحقق 👇"
+            "⚠️ <b>عذراً، يجب عليك الاشتراك في قنواتنا أولاً لتفعيل واستخدام البوت:</b>\n\n"
+            "لقد تبين أنك غير مشترك أو قمت بمغادرة القناة. يرجى الاشتراك مجدداً ثم الضغط على زر التحقق بالأسفل 👇"
         )
         if update.callback_query:
-            await update.callback_query.message.reply_text(msg_text, parse_mode=ParseMode.HTML, reply_markup=mandatory_sub_kb(not_joined))
-        else:
-            await update.message.reply_text(msg_text, parse_mode=ParseMode.HTML, reply_markup=mandatory_sub_kb(not_joined))
+            q = update.callback_query
+            try:
+                await q.answer("⚠️ يجب عليك الاشتراك في القناة أولاً للاستمرار!", show_alert=True)
+                await q.edit_message_text(
+                    msg_text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=mandatory_sub_kb(not_joined)
+                )
+            except Exception:
+                await q.message.reply_text(
+                    msg_text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=mandatory_sub_kb(not_joined)
+                )
+        elif update.message:
+            await update.message.reply_text(
+                msg_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=mandatory_sub_kb(not_joined)
+            )
         return False
     return True
 
@@ -515,6 +556,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await enforce_subscription(update, context):
+        return
     await update.message.reply_text(HELP, parse_mode=ParseMode.HTML, reply_markup=back_main_kb())
 
 
@@ -555,10 +598,14 @@ async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await enforce_subscription(update, context):
+        return
     await update.message.reply_text("عذراً، تم إلغاء هذه الميزة من قبل الإدارة.")
 
 
 async def cmd_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await enforce_subscription(update, context):
+        return
     await update.message.reply_text("عذراً، تم إلغاء هذه الميزة من قبل الإدارة.")
 
 
@@ -861,7 +908,15 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ok:
             await q.edit_message_text("🎉 تم التحقق من الاشتراك بنجاح! يمكنك الآن استخدام البوت بكامل ميزاته.", reply_markup=back_main_kb())
         else:
-            await q.answer("❌ لم تشترك في جميع القنوات بعد! يرجى الاشتراك ثم الضغط مرة أخرى.", show_alert=True)
+            await q.answer("❌ لم تشترك في جميع القنوات بعد! يرجى الاشتراك أولاً ثم الضغط على تحقق.", show_alert=True)
+            msg_text = (
+                "⚠️ <b>عذراً، يجب عليك الاشتراك في قنواتنا أولاً لتفعيل واستخدام البوت:</b>\n\n"
+                "لقد تبين أنك غير مشترك أو قمت بمغادرة القناة. يرجى الاشتراك مجدداً ثم الضغط على زر التحقق بالأسفل 👇"
+            )
+            try:
+                await q.edit_message_text(msg_text, parse_mode=ParseMode.HTML, reply_markup=mandatory_sub_kb(not_joined))
+            except Exception:
+                pass
         return
 
     # Rest of the callbacks require verification
